@@ -578,3 +578,61 @@ class EngineState:
 
     def stop(self) -> None:
         self.running = False
+        if self.task and not self.task.done():
+            self.task.cancel()
+
+    async def _loop(self) -> None:
+        while self.running:
+            try:
+                await self._tick()
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                # keep running even if one tick fails
+                traceback.print_exc()
+            await asyncio.sleep(max(0.05, ENGINE.tick_ms / 1000.0))
+
+    async def _tick(self) -> None:
+        season = db_latest_season()
+        if not season:
+            return
+        now = _unix_now()
+        if not (season["start_at"] <= now <= season["end_at"]):
+            return
+
+        players = db_list_players(limit=250)
+        if not players:
+            return
+
+        drops_to_make = secrets.randbelow(ENGINE.max_drops_per_tick + 1)
+        if drops_to_make <= 0:
+            # still broadcast a heartbeat
+            await HUB.broadcast(
+                {"type": "heartbeat", "t": now, "season_id": season["season_id"], "players": len(players)}
+            )
+            return
+
+        for _ in range(drops_to_make):
+            p = secrets.choice(players)
+            addr = p["address"]
+            await self._emit_drop_for(addr, season_id=season["season_id"])
+
+    async def _emit_drop_for(self, address: str, season_id: int) -> None:
+        # create a signed claim
+        nonce = db_inc_counter(f"nonce:{address}", 1)
+        coin_type = secrets.randbelow(ENGINE.coin_type_max + 1)
+        amount = secrets.randbelow(ENGINE.amount_max - ENGINE.amount_min + 1) + ENGINE.amount_min
+        deadline = _unix_now() + ENGINE.claim_deadline_seconds
+        drop_id = random_drop_id(season_id, address, nonce)
+
+        struct_hash = hash_drop_struct(
+            player=address,
+            season_id=season_id,
+            coin_type=coin_type,
+            amount=amount,
+            deadline=deadline,
+            drop_id_hex32=drop_id,
+            nonce=nonce,
+        )
+        digest = eip712_digest(SETTINGS.chain_id, SETTINGS.verifying_contract, struct_hash)
+        signature = sign_digest(digest)
