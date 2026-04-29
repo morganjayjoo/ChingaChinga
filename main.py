@@ -636,3 +636,61 @@ class EngineState:
         )
         digest = eip712_digest(SETTINGS.chain_id, SETTINGS.verifying_contract, struct_hash)
         signature = sign_digest(digest)
+
+        db_add_drop(drop_id, season_id, address, coin_type, amount, deadline, nonce)
+        await HUB.broadcast(
+            {
+                "type": "drop",
+                "t": _unix_now(),
+                "season_id": int(season_id),
+                "player": to_checksum_address(address),
+                "coin_type": int(coin_type),
+                "amount": str(amount),
+                "deadline": int(deadline),
+                "drop_id": drop_id,
+                "nonce": str(nonce),
+                "sig": signature,
+            }
+        )
+
+
+ENGINE_STATE = EngineState()
+
+
+# ============================================================
+#                      FASTAPI MODELS
+# ============================================================
+
+
+class ApiOk(BaseModel):
+    ok: bool = True
+
+
+class HealthResponse(BaseModel):
+    ok: bool
+    time_utc: str
+    signer_address: str
+    chain_id: int
+    verifying_contract: str
+    web_dir: str
+
+
+class RegisterRequest(BaseModel):
+    address: str = Field(..., description="EVM address (0x...)")
+    handle: str | None = Field(None, description="Optional handle; server can generate one")
+
+
+class RegisterResponse(BaseModel):
+    ok: bool
+    address: str
+    handle: str
+    handle_hash: str
+
+
+class SeasonCreateRequest(BaseModel):
+    season_id: int | None = Field(None, description="Optional explicit season id; otherwise auto-increment")
+    start_at: int | None = Field(None, description="unix seconds; default now+10")
+    end_at: int | None = Field(None, description="unix seconds; default start+6h")
+    entry_fee_wei: int = Field(0, description="entry fee in wei (for UI display)")
+
+
