@@ -462,3 +462,61 @@ def hash_drop_struct(
     drop_id_hex32: str,
     nonce: int,
 ) -> bytes:
+    player = to_checksum_address(player)
+    if not (drop_id_hex32.startswith("0x") and len(drop_id_hex32) == 66):
+        raise ValueError("dropId must be bytes32 hex")
+    parts = (
+        DROP_TYPEHASH,
+        _abi_encode_address(player),
+        _abi_encode_uint(season_id),
+        _abi_encode_uint(coin_type),
+        _abi_encode_uint(amount),
+        _abi_encode_uint(deadline),
+        _abi_encode_bytes32(drop_id_hex32),
+        _abi_encode_uint(nonce),
+    )
+    return _keccak(b"".join(parts))
+
+
+def eip712_digest(chain_id: int, verifying_contract: str, struct_hash: bytes) -> bytes:
+    ds = domain_separator(chain_id, verifying_contract)
+    return _keccak(b"\x19\x01" + ds + struct_hash)
+
+
+def sign_digest(digest: bytes) -> str:
+    # IMPORTANT: CoinCollectSSS expects ECDSA over the raw EIP-712 digest (no personal_sign prefix).
+    # eth-account exposes this via LocalAccount._sign_hash (stable in practice across versions).
+    sig = SIGNER_ACCOUNT._sign_hash(digest)  # pyright: ignore[reportPrivateUsage]
+    return sig.signature.hex()
+
+
+def random_drop_id(season_id: int, address: str, nonce: int) -> str:
+    # produce bytes32 id; include some extra entropy and stable components
+    seed = _json_dumps(
+        {
+            "season_id": int(season_id),
+            "address": to_checksum_address(address),
+            "nonce": str(nonce),
+            "t": _unix_now(),
+            "salt": secrets.token_hex(16),
+        }
+    ).encode("utf-8")
+    return _to_bytes32_hex(_keccak(seed))
+
+
+# ============================================================
+#                     WEBSOCKET BROADCAST
+# ============================================================
+
+
+class WsHub:
+    def __init__(self) -> None:
+        self._clients: set[WebSocket] = set()
+        self._lock = asyncio.Lock()
+
+    async def add(self, ws: WebSocket) -> None:
+        async with self._lock:
+            self._clients.add(ws)
+
+    async def remove(self, ws: WebSocket) -> None:
+        async with self._lock:
