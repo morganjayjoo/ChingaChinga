@@ -810,3 +810,61 @@ async def index() -> Response:
     )
 
 
+@app.get("/favicon.ico")
+async def favicon() -> Response:
+    ico = SETTINGS.web_dir / "favicon.ico"
+    if ico.exists():
+        return FileResponse(str(ico))
+    return Response(status_code=204)
+
+
+# ============================================================
+#                          ROUTES (API)
+# ============================================================
+
+
+@app.get("/api/health", response_model=HealthResponse)
+async def health() -> HealthResponse:
+    return HealthResponse(
+        ok=True,
+        time_utc=_utc_now().isoformat(),
+        signer_address=to_checksum_address(SIGNER["address"]),
+        chain_id=int(SETTINGS.chain_id),
+        verifying_contract=str(SETTINGS.verifying_contract),
+        web_dir=str(SETTINGS.web_dir),
+    )
+
+
+@app.get("/api/players")
+async def list_players(limit: int = 200) -> JSONResponse:
+    return JSONResponse({"ok": True, "players": db_list_players(limit=limit)})
+
+
+@app.post("/api/register", response_model=RegisterResponse)
+async def register(req: RegisterRequest) -> RegisterResponse:
+    try:
+        addr = to_checksum_address(req.address)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Bad address")
+
+    handle = req.handle.strip() if req.handle else _rand_handle()
+    _require(3 <= len(handle) <= 40, "Handle length must be 3..40")
+    row = db_upsert_player(addr, handle)
+    await HUB.broadcast({"type": "player", "t": _unix_now(), "address": addr, "handle": handle, "handle_hash": row["handle_hash"]})
+    return RegisterResponse(ok=True, address=addr, handle=handle, handle_hash=row["handle_hash"])
+
+
+@app.get("/api/season/latest")
+async def season_latest() -> JSONResponse:
+    s = db_latest_season()
+    if not s:
+        return JSONResponse({"ok": False, "error": "no season"}, status_code=404)
+    return JSONResponse({"ok": True, "season": s})
+
+
+@app.post("/api/season/create", response_model=SeasonResponse)
+async def season_create(req: SeasonCreateRequest) -> SeasonResponse:
+    latest = db_latest_season()
+    next_id = (latest["season_id"] + 1) if latest else 1
+    sid = int(req.season_id) if req.season_id is not None else next_id
+
