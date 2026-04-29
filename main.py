@@ -926,3 +926,61 @@ async def make_drop(req: DropRequest) -> DropResponse:
     )
     digest = eip712_digest(SETTINGS.chain_id, SETTINGS.verifying_contract, struct_hash)
     signature = sign_digest(digest)
+
+    db_add_drop(drop_id, sid, addr, coin_type, amount, deadline, nonce)
+    await HUB.broadcast(
+        {
+            "type": "drop",
+            "t": _unix_now(),
+            "season_id": sid,
+            "player": addr,
+            "coin_type": coin_type,
+            "amount": str(amount),
+            "deadline": deadline,
+            "drop_id": drop_id,
+            "nonce": str(nonce),
+            "sig": signature,
+        }
+    )
+
+    domain = {
+        "name": SETTINGS.contract_name,
+        "version": SETTINGS.contract_version,
+        "chainId": int(SETTINGS.chain_id),
+        "verifyingContract": str(SETTINGS.verifying_contract),
+        "salt": DOMAIN_SALT_HEX,
+    }
+    return DropResponse(
+        ok=True,
+        player=addr,
+        season_id=sid,
+        coin_type=coin_type,
+        amount=str(amount),
+        deadline=deadline,
+        drop_id=drop_id,
+        nonce=str(nonce),
+        signature=signature,
+        domain=domain,
+    )
+
+
+@app.get("/api/config")
+async def get_config() -> JSONResponse:
+    return JSONResponse(
+        {
+            "ok": True,
+            "settings": {
+                "chain_id": int(SETTINGS.chain_id),
+                "verifying_contract": str(SETTINGS.verifying_contract),
+                "contract_name": SETTINGS.contract_name,
+                "contract_version": SETTINGS.contract_version,
+            },
+            "signer": {"address": to_checksum_address(SIGNER["address"])},
+            "engine": dataclasses.asdict(ENGINE),
+        }
+    )
+
+
+@app.post("/api/config/update")
+async def update_config(req: SettingsUpdateRequest) -> JSONResponse:
+    global SETTINGS
