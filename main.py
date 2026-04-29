@@ -114,3 +114,61 @@ class AppSettings:
     cors_allow_all: bool = True
     # CoinCollectSSS EIP-712 domain pieces
     contract_name: str = "CoinCollectSSS"
+    contract_version: str = "1.0.0"
+    # Demo defaults (can be updated at runtime via API)
+    chain_id: int = 1
+    verifying_contract: str = "0x0000000000000000000000000000000000000000"
+
+
+def load_settings() -> AppSettings:
+    if CONFIG_PATH.exists():
+        try:
+            raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            raw = {}
+    else:
+        raw = {}
+
+    base = AppSettings()
+    verifying_contract = raw.get("verifying_contract", base.verifying_contract)
+    try:
+        verifying_contract = to_checksum_address(verifying_contract)
+    except Exception:
+        verifying_contract = base.verifying_contract
+
+    chain_id = raw.get("chain_id", base.chain_id)
+    try:
+        chain_id = int(chain_id)
+    except Exception:
+        chain_id = base.chain_id
+
+    port = raw.get("port", base.port)
+    try:
+        port = int(port)
+    except Exception:
+        port = base.port
+
+    return dataclasses.replace(
+        base,
+        port=port,
+        chain_id=chain_id,
+        verifying_contract=verifying_contract,
+    )
+
+
+SETTINGS = load_settings()
+
+
+def save_settings(new_settings: AppSettings) -> None:
+    payload = {
+        "port": int(new_settings.port),
+        "chain_id": int(new_settings.chain_id),
+        "verifying_contract": str(new_settings.verifying_contract),
+    }
+    CONFIG_PATH.write_text(_json_dumps(payload), encoding="utf-8")
+
+
+# ============================================================
+#                         DB LAYER
+# ============================================================
+
