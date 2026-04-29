@@ -868,3 +868,61 @@ async def season_create(req: SeasonCreateRequest) -> SeasonResponse:
     next_id = (latest["season_id"] + 1) if latest else 1
     sid = int(req.season_id) if req.season_id is not None else next_id
 
+    now = _unix_now()
+    start_at = int(req.start_at) if req.start_at is not None else now + 10
+    end_at = int(req.end_at) if req.end_at is not None else (start_at + 6 * 60 * 60)
+    _require(end_at > start_at, "end_at must be > start_at")
+    _require(end_at > now, "end_at must be in the future")
+
+    entry_fee_wei = int(req.entry_fee_wei)
+    _require(entry_fee_wei >= 0, "entry_fee_wei must be >= 0")
+
+    row = db_set_season(sid, start_at, end_at, entry_fee_wei)
+    await HUB.broadcast({"type": "season", "t": _unix_now(), "season": row})
+    return SeasonResponse(ok=True, season_id=sid, start_at=start_at, end_at=end_at, entry_fee_wei=str(entry_fee_wei))
+
+
+@app.get("/api/drops")
+async def list_drops(address: str | None = None, limit: int = 200) -> JSONResponse:
+    if address:
+        try:
+            address = to_checksum_address(address)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Bad address")
+    return JSONResponse({"ok": True, "drops": db_list_drops(address=address, limit=limit)})
+
+
+@app.post("/api/drop", response_model=DropResponse)
+async def make_drop(req: DropRequest) -> DropResponse:
+    try:
+        addr = to_checksum_address(req.address)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Bad address")
+
+    season = db_latest_season()
+    _require(season is not None, "No season")
+    sid = int(req.season_id) if req.season_id is not None else int(season["season_id"])
+
+    nonce = db_inc_counter(f"nonce:{addr}", 1)
+    coin_type = int(req.coin_type) if req.coin_type is not None else secrets.randbelow(ENGINE.coin_type_max + 1)
+
+    # amount is kept modest to align with typical on-chain point scaling
+    amount = int(req.amount) if req.amount is not None else (secrets.randbelow(ENGINE.amount_max) + 1)
+    amount = _clamp_int(amount, 1, ENGINE.amount_max)
+
+    deadline = int(req.deadline) if req.deadline is not None else (_unix_now() + ENGINE.claim_deadline_seconds)
+    _require(deadline > _unix_now(), "deadline must be in the future")
+
+    drop_id = random_drop_id(sid, addr, nonce)
+
+    struct_hash = hash_drop_struct(
+        player=addr,
+        season_id=sid,
+        coin_type=coin_type,
+        amount=amount,
+        deadline=deadline,
+        drop_id_hex32=drop_id,
+        nonce=nonce,
+    )
+    digest = eip712_digest(SETTINGS.chain_id, SETTINGS.verifying_contract, struct_hash)
+    signature = sign_digest(digest)
