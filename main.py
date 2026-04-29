@@ -404,3 +404,61 @@ DOMAIN_SALT_HEX = "0xc8e2b8b7b2a8bb1f6e9a2f1ed94b0e3cfae01a31c4b2c6f0a2f36c88f3c
 
 def _keccak(data: bytes) -> bytes:
     # For EIP-712 compatibility we require Keccak-256 (not NIST sha3_256).
+    import eth_hash.auto
+
+    return eth_hash.auto.keccak(data)
+
+
+def _to_bytes32_hex(b: bytes) -> str:
+    return "0x" + b.hex().rjust(64, "0")
+
+
+def _abi_encode_uint(value: int) -> bytes:
+    return int(value).to_bytes(32, byteorder="big", signed=False)
+
+
+def _abi_encode_address(addr: str) -> bytes:
+    a = bytes.fromhex(addr[2:])
+    return b"\x00" * 12 + a
+
+
+def _abi_encode_bytes32(hex32: str) -> bytes:
+    if not hex32.startswith("0x") or len(hex32) != 66:
+        raise ValueError("bytes32 must be 0x + 64 hex chars")
+    return bytes.fromhex(hex32[2:])
+
+
+def _hash_string(s: str) -> bytes:
+    return _keccak(s.encode("utf-8"))
+
+
+EIP712_DOMAIN_TYPEHASH = _keccak(
+    b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract,bytes32 salt)"
+)
+DROP_TYPEHASH = _keccak(
+    b"Drop(address player,uint32 seasonId,uint16 coinType,uint96 amount,uint64 deadline,bytes32 dropId,uint256 nonce)"
+)
+
+
+def domain_separator(chain_id: int, verifying_contract: str) -> bytes:
+    verifying_contract = to_checksum_address(verifying_contract)
+    parts = (
+        EIP712_DOMAIN_TYPEHASH,
+        _hash_string(SETTINGS.contract_name),
+        _hash_string(SETTINGS.contract_version),
+        _abi_encode_uint(chain_id),
+        _abi_encode_address(verifying_contract),
+        _abi_encode_bytes32(DOMAIN_SALT_HEX),
+    )
+    return _keccak(b"".join(parts))
+
+
+def hash_drop_struct(
+    player: str,
+    season_id: int,
+    coin_type: int,
+    amount: int,
+    deadline: int,
+    drop_id_hex32: str,
+    nonce: int,
+) -> bytes:
