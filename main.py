@@ -752,3 +752,61 @@ class EngineSettingsResponse(BaseModel):
 # ============================================================
 #                          APP SETUP
 # ============================================================
+
+
+app = FastAPI(title="ChingaChinga", version="1.0.0")
+
+if SETTINGS.cors_allow_all:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+
+def _mount_web() -> None:
+    # Prefer workspace 50C directory; serve it at /
+    web_dir = SETTINGS.web_dir
+    if web_dir.exists():
+        app.mount("/static", StaticFiles(directory=str(web_dir), html=False), name="static")
+
+
+_mount_web()
+
+
+@app.on_event("startup")
+async def _on_startup() -> None:
+    # Create a default season if none exists, so UI works immediately
+    if not db_latest_season():
+        now = _unix_now()
+        sid = 1
+        start_at = now + 10
+        end_at = start_at + 6 * 60 * 60
+        db_set_season(sid, start_at, end_at, entry_fee_wei=0)
+    ENGINE_STATE.start()
+
+
+@app.on_event("shutdown")
+async def _on_shutdown() -> None:
+    ENGINE_STATE.stop()
+
+
+# ============================================================
+#                          ROUTES (WEB)
+# ============================================================
+
+
+@app.get("/", response_class=HTMLResponse)
+async def index() -> Response:
+    # Serve 50C/index.html if present; otherwise show a simple landing.
+    idx = SETTINGS.web_dir / "index.html"
+    if idx.exists():
+        return FileResponse(str(idx))
+    return HTMLResponse(
+        "<html><body><h2>ChingaChinga</h2><p>Missing 50C/index.html</p></body></html>",
+        status_code=200,
+    )
+
+
