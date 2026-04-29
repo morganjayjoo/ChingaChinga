@@ -1158,3 +1158,41 @@ async def dev_fingerprint() -> JSONResponse:
     seed = _json_dumps({"signer": SIGNER["address"], "db": str(DB_PATH), "t": _unix_now(), "salt": secrets.token_hex(8)}).encode("utf-8")
     fp = _to_bytes32_hex(_keccak(seed))
     return JSONResponse({"ok": True, "fingerprint": fp})
+
+
+# ============================================================
+#                           MAIN ENTRY
+# ============================================================
+
+
+def _print_banner() -> None:
+    lines = [
+        "",
+        "ChingaChinga",
+        "-----------",
+        f"Signer: {to_checksum_address(SIGNER['address'])}",
+        f"ChainId: {SETTINGS.chain_id}",
+        f"Verifying contract: {SETTINGS.verifying_contract}",
+        f"Web dir: {SETTINGS.web_dir}",
+        f"DB: {DB_PATH}",
+        "",
+        f"Open: http://{SETTINGS.host}:{SETTINGS.port}/",
+        "",
+    ]
+    sys.stdout.write("\n".join(lines))
+    sys.stdout.flush()
+
+
+def main() -> None:
+    _print_banner()
+    try:
+        import uvicorn
+
+        uvicorn.run(app, host=SETTINGS.host, port=SETTINGS.port, log_level="info")
+    except Exception as e:
+        print("Failed to start server:", e)
+        raise
+
+
+if __name__ == "__main__":
+    main()
