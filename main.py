@@ -984,3 +984,61 @@ async def get_config() -> JSONResponse:
 @app.post("/api/config/update")
 async def update_config(req: SettingsUpdateRequest) -> JSONResponse:
     global SETTINGS
+    s = SETTINGS
+
+    chain_id = s.chain_id if req.chain_id is None else int(req.chain_id)
+    port = s.port if req.port is None else int(req.port)
+    verifying_contract = s.verifying_contract if req.verifying_contract is None else req.verifying_contract
+    try:
+        verifying_contract = to_checksum_address(verifying_contract)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Bad verifying_contract")
+
+    SETTINGS = dataclasses.replace(s, chain_id=chain_id, verifying_contract=verifying_contract, port=port)
+    save_settings(SETTINGS)
+
+    await HUB.broadcast({"type": "config", "t": _unix_now(), "settings": {"chain_id": chain_id, "verifying_contract": verifying_contract, "port": port}})
+    return JSONResponse({"ok": True, "settings": {"chain_id": chain_id, "verifying_contract": verifying_contract, "port": port}})
+
+
+@app.post("/api/engine/update", response_model=EngineSettingsResponse)
+async def update_engine(req: EngineSettingsRequest) -> EngineSettingsResponse:
+    if req.tick_ms is not None:
+        ENGINE.tick_ms = _clamp_int(int(req.tick_ms), 200, 10_000)
+    if req.max_drops_per_tick is not None:
+        ENGINE.max_drops_per_tick = _clamp_int(int(req.max_drops_per_tick), 0, 60)
+    if req.claim_deadline_seconds is not None:
+        ENGINE.claim_deadline_seconds = _clamp_int(int(req.claim_deadline_seconds), 30, 3600)
+    if req.coin_type_max is not None:
+        ENGINE.coin_type_max = _clamp_int(int(req.coin_type_max), 4, 200)
+    if req.amount_min is not None:
+        ENGINE.amount_min = _clamp_int(int(req.amount_min), 1, 500)
+    if req.amount_max is not None:
+        ENGINE.amount_max = _clamp_int(int(req.amount_max), ENGINE.amount_min, 10_000)
+
+    await HUB.broadcast({"type": "engine", "t": _unix_now(), "engine": dataclasses.asdict(ENGINE), "running": ENGINE_STATE.running})
+    return EngineSettingsResponse(ok=True, running=ENGINE_STATE.running, **dataclasses.asdict(ENGINE))
+
+
+@app.post("/api/engine/start", response_model=EngineSettingsResponse)
+async def engine_start() -> EngineSettingsResponse:
+    ENGINE_STATE.start()
+    await HUB.broadcast({"type": "engine", "t": _unix_now(), "engine": dataclasses.asdict(ENGINE), "running": True})
+    return EngineSettingsResponse(ok=True, running=True, **dataclasses.asdict(ENGINE))
+
+
+@app.post("/api/engine/stop", response_model=EngineSettingsResponse)
+async def engine_stop() -> EngineSettingsResponse:
+    ENGINE_STATE.stop()
+    await HUB.broadcast({"type": "engine", "t": _unix_now(), "engine": dataclasses.asdict(ENGINE), "running": False})
+    return EngineSettingsResponse(ok=True, running=False, **dataclasses.asdict(ENGINE))
+
+
+# ============================================================
+#                       WEBSOCKET ENDPOINT
+# ============================================================
+
+
+@app.websocket("/ws")
+async def ws_endpoint(ws: WebSocket) -> None:
+    await ws.accept()
