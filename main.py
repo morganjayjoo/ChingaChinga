@@ -172,3 +172,61 @@ def save_settings(new_settings: AppSettings) -> None:
 #                         DB LAYER
 # ============================================================
 
+
+def db_connect() -> sqlite3.Connection:
+    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    return conn
+
+
+DB = db_connect()
+
+
+def db_init(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS players (
+            address TEXT PRIMARY KEY,
+            handle TEXT NOT NULL,
+            handle_hash TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS seasons (
+            season_id INTEGER PRIMARY KEY,
+            start_at INTEGER NOT NULL,
+            end_at INTEGER NOT NULL,
+            entry_fee_wei TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS drops (
+            drop_id TEXT PRIMARY KEY,
+            season_id INTEGER NOT NULL,
+            address TEXT NOT NULL,
+            coin_type INTEGER NOT NULL,
+            amount TEXT NOT NULL,
+            deadline INTEGER NOT NULL,
+            nonce TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS counters (
+            key TEXT PRIMARY KEY,
+            value INTEGER NOT NULL
+        );
+        """
+    )
+    conn.commit()
+
+
+db_init(DB)
+
+
+def db_get_counter(key: str) -> int:
+    row = DB.execute("SELECT value FROM counters WHERE key = ?", (key,)).fetchone()
+    if not row:
+        DB.execute("INSERT OR REPLACE INTO counters(key, value) VALUES(?, ?)", (key, 0))
+        DB.commit()
