@@ -1042,3 +1042,61 @@ async def engine_stop() -> EngineSettingsResponse:
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket) -> None:
     await ws.accept()
+    await HUB.add(ws)
+    try:
+        await ws.send_text(
+            _json_dumps(
+                {
+                    "type": "hello",
+                    "t": _unix_now(),
+                    "signer": to_checksum_address(SIGNER["address"]),
+                    "settings": {"chain_id": int(SETTINGS.chain_id), "verifying_contract": str(SETTINGS.verifying_contract)},
+                    "engine": dataclasses.asdict(ENGINE),
+                }
+            )
+        )
+        while True:
+            # keep alive; ignore client messages by default
+            _ = await ws.receive_text()
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        await HUB.remove(ws)
+
+
+# ============================================================
+#                     CONTRACT ABI (MINIMAL)
+# ============================================================
+# Used by the 50C UI for convenience. This is a small subset of the functions.
+
+
+COINCOLLECTSSS_ABI_MIN = [
+    {
+        "inputs": [{"internalType": "bytes32", "name": "handleHash", "type": "bytes32"}],
+        "name": "register",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function",
+    },
+    {
+        "inputs": [],
+        "name": "enterSeason",
+        "outputs": [],
+        "stateMutability": "payable",
+        "type": "function",
+    },
+    {
+        "inputs": [],
+        "name": "currentSeasonId",
+        "outputs": [{"internalType": "uint32", "name": "", "type": "uint32"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [{"internalType": "uint32", "name": "seasonId", "type": "uint32"}],
+        "name": "seasonStatus",
+        "outputs": [
+            {"internalType": "bool", "name": "active", "type": "bool"},
+            {"internalType": "bool", "name": "finalized", "type": "bool"},
