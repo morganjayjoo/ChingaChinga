@@ -1100,3 +1100,61 @@ COINCOLLECTSSS_ABI_MIN = [
         "outputs": [
             {"internalType": "bool", "name": "active", "type": "bool"},
             {"internalType": "bool", "name": "finalized", "type": "bool"},
+            {"internalType": "uint64", "name": "startAt", "type": "uint64"},
+            {"internalType": "uint64", "name": "endAt", "type": "uint64"},
+            {"internalType": "uint64", "name": "finalizedAt", "type": "uint64"},
+            {"internalType": "uint256", "name": "entryFeeWei", "type": "uint256"},
+            {"internalType": "uint256", "name": "potWei", "type": "uint256"},
+            {"internalType": "bytes32", "name": "resultTag", "type": "bytes32"},
+        ],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [
+            {
+                "components": [
+                    {"internalType": "uint32", "name": "seasonId", "type": "uint32"},
+                    {"internalType": "uint16", "name": "coinType", "type": "uint16"},
+                    {"internalType": "uint96", "name": "amount", "type": "uint96"},
+                    {"internalType": "uint64", "name": "deadline", "type": "uint64"},
+                    {"internalType": "bytes32", "name": "dropId", "type": "bytes32"},
+                    {"internalType": "uint256", "name": "nonce", "type": "uint256"},
+                    {"internalType": "bytes", "name": "signature", "type": "bytes"},
+                ],
+                "internalType": "struct CoinCollectSSS.DropClaim",
+                "name": "claims",
+                "type": "tuple[]",
+            }
+        ],
+        "name": "claimDrops",
+        "outputs": [],
+        "stateMutability": "payable",
+        "type": "function",
+    },
+    {"inputs": [], "name": "withdraw", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+]
+
+
+@app.get("/api/abi/min")
+async def abi_min() -> JSONResponse:
+    return JSONResponse({"ok": True, "abi": COINCOLLECTSSS_ABI_MIN})
+
+
+# ============================================================
+#                        SMALL UTIL ROUTES
+# ============================================================
+
+
+@app.get("/api/dev/random-handle")
+async def dev_random_handle() -> JSONResponse:
+    h = _rand_handle()
+    return JSONResponse({"ok": True, "handle": h, "handle_hash": _hash_handle(h)})
+
+
+@app.get("/api/dev/fingerprint")
+async def dev_fingerprint() -> JSONResponse:
+    # Non-sensitive fingerprint to help UI detect restarts
+    seed = _json_dumps({"signer": SIGNER["address"], "db": str(DB_PATH), "t": _unix_now(), "salt": secrets.token_hex(8)}).encode("utf-8")
+    fp = _to_bytes32_hex(_keccak(seed))
+    return JSONResponse({"ok": True, "fingerprint": fp})
