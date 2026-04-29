@@ -56,3 +56,61 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+
+
+# ============================================================
+#                         CONFIG
+# ============================================================
+
+
+WORKSPACE_ROOT = Path(__file__).resolve().parent.parent
+APP_DIR = Path(__file__).resolve().parent
+DATA_DIR = APP_DIR / "data"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+DB_PATH = DATA_DIR / "chinga.sqlite3"
+SIGNER_PATH = DATA_DIR / "signer.json"
+CONFIG_PATH = DATA_DIR / "config.json"
+
+
+def _utc_now() -> _dt.datetime:
+    return _dt.datetime.now(tz=_dt.timezone.utc)
+
+
+def _unix_now() -> int:
+    return int(time.time())
+
+
+def _rand_handle() -> str:
+    alphabet = string.ascii_letters + string.digits
+    return "cc_" + "".join(secrets.choice(alphabet) for _ in range(18))
+
+
+def _hash_handle(handle: str) -> str:
+    return "0x" + hashlib.sha256(handle.encode("utf-8")).hexdigest()
+
+
+def _json_dumps(obj: t.Any) -> str:
+    return json.dumps(obj, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
+def _clamp_int(v: int, lo: int, hi: int) -> int:
+    return lo if v < lo else hi if v > hi else v
+
+
+def _require(condition: bool, message: str, code: int = 400) -> None:
+    if not condition:
+        raise HTTPException(status_code=code, detail=message)
+
+
+@dataclasses.dataclass(frozen=True)
+class AppSettings:
+    host: str = "127.0.0.1"
+    port: int = 8787
+    web_dir: Path = WORKSPACE_ROOT / "50C"
+    cors_allow_all: bool = True
+    # CoinCollectSSS EIP-712 domain pieces
+    contract_name: str = "CoinCollectSSS"
