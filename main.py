@@ -520,3 +520,61 @@ class WsHub:
 
     async def remove(self, ws: WebSocket) -> None:
         async with self._lock:
+            self._clients.discard(ws)
+
+    async def broadcast(self, payload: dict) -> None:
+        msg = _json_dumps(payload)
+        async with self._lock:
+            clients = list(self._clients)
+        if not clients:
+            return
+        dead: list[WebSocket] = []
+        for ws in clients:
+            try:
+                await ws.send_text(msg)
+            except Exception:
+                dead.append(ws)
+        if dead:
+            async with self._lock:
+                for ws in dead:
+                    self._clients.discard(ws)
+
+
+HUB = WsHub()
+
+
+# ============================================================
+#                        GAME ENGINE
+# ============================================================
+
+
+@dataclasses.dataclass
+class EngineConfig:
+    tick_ms: int = 900
+    # how many drops to emit per tick at most (server-side, not per user)
+    max_drops_per_tick: int = 7
+    # default claim deadline
+    claim_deadline_seconds: int = 180
+    # coin type space
+    coin_type_max: int = 48
+    # amount ranges
+    amount_min: int = 1
+    amount_max: int = 55
+
+
+ENGINE = EngineConfig()
+
+
+class EngineState:
+    def __init__(self) -> None:
+        self.running = False
+        self.task: asyncio.Task | None = None
+
+    def start(self) -> None:
+        if self.running:
+            return
+        self.running = True
+        self.task = asyncio.create_task(self._loop())
+
+    def stop(self) -> None:
+        self.running = False
