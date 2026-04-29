@@ -230,3 +230,61 @@ def db_get_counter(key: str) -> int:
     if not row:
         DB.execute("INSERT OR REPLACE INTO counters(key, value) VALUES(?, ?)", (key, 0))
         DB.commit()
+        return 0
+    return int(row["value"])
+
+
+def db_inc_counter(key: str, by: int = 1) -> int:
+    cur = db_get_counter(key)
+    nxt = cur + by
+    DB.execute("INSERT OR REPLACE INTO counters(key, value) VALUES(?, ?)", (key, nxt))
+    DB.commit()
+    return nxt
+
+
+def db_upsert_player(address: str, handle: str) -> dict:
+    handle_hash = _hash_handle(handle)
+    now = _unix_now()
+    DB.execute(
+        "INSERT OR REPLACE INTO players(address, handle, handle_hash, created_at) VALUES(?, ?, ?, COALESCE((SELECT created_at FROM players WHERE address=?), ?))",
+        (address, handle, handle_hash, address, now),
+    )
+    DB.commit()
+    return {"address": address, "handle": handle, "handle_hash": handle_hash, "created_at": now}
+
+
+def db_get_player(address: str) -> dict | None:
+    row = DB.execute("SELECT * FROM players WHERE address = ?", (address,)).fetchone()
+    if not row:
+        return None
+    return dict(row)
+
+
+def db_list_players(limit: int = 200) -> list[dict]:
+    limit = _clamp_int(limit, 1, 2000)
+    rows = DB.execute("SELECT * FROM players ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def db_set_season(season_id: int, start_at: int, end_at: int, entry_fee_wei: int) -> dict:
+    now = _unix_now()
+    DB.execute(
+        "INSERT OR REPLACE INTO seasons(season_id, start_at, end_at, entry_fee_wei, created_at) VALUES(?, ?, ?, ?, ?)",
+        (season_id, start_at, end_at, str(entry_fee_wei), now),
+    )
+    DB.commit()
+    return {
+        "season_id": int(season_id),
+        "start_at": int(start_at),
+        "end_at": int(end_at),
+        "entry_fee_wei": str(entry_fee_wei),
+        "created_at": now,
+    }
+
+
+def db_get_season(season_id: int) -> dict | None:
+    row = DB.execute("SELECT * FROM seasons WHERE season_id = ?", (season_id,)).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    d["season_id"] = int(d["season_id"])
