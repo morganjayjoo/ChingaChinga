@@ -346,3 +346,61 @@ def db_list_drops(address: str | None = None, limit: int = 200) -> list[dict]:
 # ============================================================
 #                      SIGNER / KEY MGMT
 # ============================================================
+
+
+class SignerState(t.TypedDict):
+    address: str
+    private_key: str
+    created_at: int
+    note: str
+
+
+def _new_signer_state() -> SignerState:
+    acct = Account.create(secrets.token_hex(32))
+    return {
+        "address": to_checksum_address(acct.address),
+        "private_key": acct.key.hex(),
+        "created_at": _unix_now(),
+        "note": "Local operator signer for CoinCollectSSS EIP-712 drops.",
+    }
+
+
+def load_or_create_signer() -> SignerState:
+    if SIGNER_PATH.exists():
+        try:
+            raw = json.loads(SIGNER_PATH.read_text(encoding="utf-8"))
+            address = to_checksum_address(raw["address"])
+            pk = raw["private_key"]
+            if not pk.startswith("0x"):
+                pk = "0x" + pk
+            _ = Account.from_key(pk)
+            raw["address"] = address
+            raw["private_key"] = pk
+            return t.cast(SignerState, raw)
+        except Exception:
+            # fall through to recreate (keep the old file for forensics)
+            backup = SIGNER_PATH.with_suffix(".broken.json")
+            try:
+                SIGNER_PATH.replace(backup)
+            except Exception:
+                pass
+
+    st = _new_signer_state()
+    SIGNER_PATH.write_text(_json_dumps(st), encoding="utf-8")
+    return st
+
+
+SIGNER = load_or_create_signer()
+SIGNER_ACCOUNT = Account.from_key(SIGNER["private_key"])
+
+
+# ============================================================
+#                 EIP-712 DROP COMPAT HELPERS
+# ============================================================
+
+
+DOMAIN_SALT_HEX = "0xc8e2b8b7b2a8bb1f6e9a2f1ed94b0e3cfae01a31c4b2c6f0a2f36c88f3cc7a19"
+
+
+def _keccak(data: bytes) -> bytes:
+    # For EIP-712 compatibility we require Keccak-256 (not NIST sha3_256).
