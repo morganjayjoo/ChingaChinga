@@ -694,3 +694,61 @@ class SeasonCreateRequest(BaseModel):
     entry_fee_wei: int = Field(0, description="entry fee in wei (for UI display)")
 
 
+class SeasonResponse(BaseModel):
+    ok: bool
+    season_id: int
+    start_at: int
+    end_at: int
+    entry_fee_wei: str
+
+
+class DropRequest(BaseModel):
+    address: str
+    season_id: int | None = None
+    coin_type: int | None = None
+    amount: int | None = None
+    deadline: int | None = None
+
+
+class DropResponse(BaseModel):
+    ok: bool
+    player: str
+    season_id: int
+    coin_type: int
+    amount: str
+    deadline: int
+    drop_id: str
+    nonce: str
+    signature: str
+    domain: dict
+
+
+class SettingsUpdateRequest(BaseModel):
+    chain_id: int | None = None
+    verifying_contract: str | None = None
+    port: int | None = None
+
+
+class EngineSettingsRequest(BaseModel):
+    tick_ms: int | None = None
+    max_drops_per_tick: int | None = None
+    claim_deadline_seconds: int | None = None
+    coin_type_max: int | None = None
+    amount_min: int | None = None
+    amount_max: int | None = None
+
+
+class EngineSettingsResponse(BaseModel):
+    ok: bool
+    tick_ms: int
+    max_drops_per_tick: int
+    claim_deadline_seconds: int
+    coin_type_max: int
+    amount_min: int
+    amount_max: int
+    running: bool
+
+
+# ============================================================
+#                          APP SETUP
+# ============================================================
