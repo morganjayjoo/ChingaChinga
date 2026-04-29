@@ -288,3 +288,61 @@ def db_get_season(season_id: int) -> dict | None:
         return None
     d = dict(row)
     d["season_id"] = int(d["season_id"])
+    d["start_at"] = int(d["start_at"])
+    d["end_at"] = int(d["end_at"])
+    return d
+
+
+def db_latest_season() -> dict | None:
+    row = DB.execute("SELECT * FROM seasons ORDER BY season_id DESC LIMIT 1").fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    d["season_id"] = int(d["season_id"])
+    d["start_at"] = int(d["start_at"])
+    d["end_at"] = int(d["end_at"])
+    return d
+
+
+def db_add_drop(
+    drop_id: str,
+    season_id: int,
+    address: str,
+    coin_type: int,
+    amount: int,
+    deadline: int,
+    nonce: int,
+) -> dict:
+    now = _unix_now()
+    DB.execute(
+        "INSERT OR REPLACE INTO drops(drop_id, season_id, address, coin_type, amount, deadline, nonce, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
+        (drop_id, int(season_id), address, int(coin_type), str(amount), int(deadline), str(nonce), now),
+    )
+    DB.commit()
+    return {
+        "drop_id": drop_id,
+        "season_id": int(season_id),
+        "address": address,
+        "coin_type": int(coin_type),
+        "amount": str(amount),
+        "deadline": int(deadline),
+        "nonce": str(nonce),
+        "created_at": now,
+    }
+
+
+def db_list_drops(address: str | None = None, limit: int = 200) -> list[dict]:
+    limit = _clamp_int(limit, 1, 5000)
+    if address:
+        rows = DB.execute(
+            "SELECT * FROM drops WHERE address = ? ORDER BY created_at DESC LIMIT ?",
+            (address, limit),
+        ).fetchall()
+    else:
+        rows = DB.execute("SELECT * FROM drops ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ============================================================
+#                      SIGNER / KEY MGMT
+# ============================================================
